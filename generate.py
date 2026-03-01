@@ -18,6 +18,7 @@ Configuration — edit the constants below:
 import os
 import re
 import json
+import hashlib
 import datetime
 import subprocess
 import tempfile
@@ -27,11 +28,29 @@ from html import escape, unescape
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 
-NOTES_FOLDER = "AI conversations sustainability win-win and compassion"
-PROJECT_DIR  = os.path.dirname(os.path.abspath(__file__))
-SITE_DIR     = os.path.join(PROJECT_DIR, "docs")
-CONV_DIR     = os.path.join(SITE_DIR, "conversations")
-CSS_DIR      = os.path.join(SITE_DIR, "css")
+NOTES_FOLDER   = "AI conversations sustainability win-win and compassion"
+PROJECT_DIR    = os.path.dirname(os.path.abspath(__file__))
+SITE_DIR       = os.path.join(PROJECT_DIR, "docs")
+CONV_DIR       = os.path.join(SITE_DIR, "conversations")
+CSS_DIR        = os.path.join(SITE_DIR, "css")
+MANIFEST_PATH  = os.path.join(PROJECT_DIR, "build_manifest.json")
+
+# ── Change detection ──────────────────────────────────────────────────────────
+
+def content_hash(text):
+    return hashlib.md5(text.encode("utf-8", errors="replace")).hexdigest()
+
+def load_manifest():
+    try:
+        with open(MANIFEST_PATH, encoding="utf-8") as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+def save_manifest(manifest):
+    with open(MANIFEST_PATH, "w", encoding="utf-8") as f:
+        json.dump(manifest, f, indent=2)
+
 
 # ── Step 1: Export from Apple Notes ──────────────────────────────────────────
 
@@ -326,8 +345,9 @@ def read_note_file(filepath):
         return mac_text  # best effort
 
 
-def parse_note(filepath):
-    raw = read_note_file(filepath)
+def parse_note(filepath, raw=None):
+    if raw is None:
+        raw = read_note_file(filepath)
 
     head, _, body = raw.partition("\n")
     title = head.replace("TITLE:", "").strip()
@@ -494,7 +514,7 @@ FOOTER_ROOT = '''\
 </footer>'''
 
 
-def write_conversation_page(note, out_path):
+def write_conversation_page(note, out_path, build_time=""):
     title         = note["title"]
     display_title = note["display_title"]
     ais      = list(dict.fromkeys(t["speaker"] for t in note["turns"] if t["speaker"] != "human"))
@@ -537,6 +557,7 @@ def write_conversation_page(note, out_path):
     <div class="conv-back">
       <a href="../contents.html">← All Conversations</a>
     </div>
+    {f'<p class="build-time">Built {escape(build_time)}</p>' if build_time else ''}
   </div>
 </main>
 
@@ -865,35 +886,49 @@ def main():
         )
         print(f"\nParsing {len(note_files)} notes...")
 
-        all_notes = []
-        filenames  = []
+        manifest     = load_manifest()
+        new_manifest = {}
+        all_notes    = []
+        filenames    = []
+        changed      = []   # parallel bool list
 
         for i, nf in enumerate(note_files, 1):
             path = os.path.join(export_dir, nf)
             try:
-                note = parse_note(path)
+                raw  = read_note_file(path)
+                note = parse_note(path, raw=raw)
             except Exception as e:
                 print(f"  WARNING: Could not parse {nf}: {e}")
                 continue
 
             slug     = slugify(note["title"])
             filename = f"{i:02d}-{slug}.html"
+            h        = content_hash(raw)
+            is_new   = manifest.get(note["title"]) != h
+
             all_notes.append(note)
             filenames.append(filename)
-            print(f"  {i:02d}. {note['title'][:60]}")
+            changed.append(is_new)
+            new_manifest[note["title"]] = h
+            marker = "*" if is_new else " "
+            print(f"  {marker} {i:02d}. {note['title'][:58]}")
 
-        total = len(all_notes)
-        print(f"\nGenerating {total} conversation pages...")
+        total   = len(all_notes)
+        n_changed = sum(changed)
+        print(f"\nRebuilding {n_changed} changed page(s) of {total}...")
 
-        # 3. Write conversation pages
-        for note, fname in zip(all_notes, filenames):
+        build_time = datetime.datetime.now().strftime("%b %-d, %Y %-I:%M %p")
+
+        # 3. Write conversation pages (changed only)
+        for note, fname, is_changed in zip(all_notes, filenames, changed):
             out = os.path.join(CONV_DIR, fname)
-            write_conversation_page(note, out)
+            if is_changed:
+                write_conversation_page(note, out, build_time)
 
-        print(f"  Wrote {total} pages to conversations/")
+        print(f"  Done.")
 
-        # 4. Write table of contents and home page
-        print("\nGenerating index and contents pages...")
+        # 4. Always regenerate index and contents (reflect full sorted list)
+        print("Regenerating index and contents pages...")
         write_contents_page(all_notes, filenames)
         write_home_page(all_notes, filenames)
 
@@ -904,10 +939,10 @@ def main():
                 os.remove(os.path.join(CONV_DIR, f))
                 print(f"  Removed stale: {f}")
 
+        save_manifest(new_manifest)
         print(f"\n✓ Site updated — {total} conversations at {SITE_DIR}/index.html")
 
     finally:
-        # Always clean up temp export
         shutil.rmtree(export_dir, ignore_errors=True)
 
 

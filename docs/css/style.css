@@ -597,6 +597,15 @@ main { position: relative; z-index: 1; }
   border-color: var(--amber);
 }
 
+/* ─── Build timestamp ─── */
+.build-time {
+  font-size: 0.68rem;
+  color: var(--ash);
+  opacity: 0.5;
+  text-align: right;
+  margin-top: 12px;
+}
+
 /* ─── Footer ─── */
 footer {
   border-top: 1px solid rgba(200,137,58,0.12);

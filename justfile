@@ -8,8 +8,8 @@ site_dir := justfile_directory()
 build:
     python3 {{site_dir}}/generate.py
 
-# Install / deploy the site (configure target below)
+# Deploy the site to GitHub Pages
 install: build
-    @echo "Deploy target not yet configured."
-    @echo "Options: GitHub Pages, Netlify, rsync to a server..."
-    @echo "Edit the 'install' recipe in justfile when ready."
+    git -C {{site_dir}} add -A
+    git -C {{site_dir}} diff --cached --quiet || git -C {{site_dir}} commit -m "Site update $(date '+%Y-%m-%d %H:%M')"
+    git -C {{site_dir}} push origin master
