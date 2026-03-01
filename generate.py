@@ -28,7 +28,8 @@ from html import escape, unescape
 # ── Configuration ─────────────────────────────────────────────────────────────
 
 NOTES_FOLDER = "AI conversations sustainability win-win and compassion"
-SITE_DIR     = os.path.dirname(os.path.abspath(__file__))
+PROJECT_DIR  = os.path.dirname(os.path.abspath(__file__))
+SITE_DIR     = os.path.join(PROJECT_DIR, "docs")
 CONV_DIR     = os.path.join(SITE_DIR, "conversations")
 CSS_DIR      = os.path.join(SITE_DIR, "css")
 
@@ -851,6 +852,11 @@ def main():
 
     try:
         os.makedirs(CONV_DIR, exist_ok=True)
+        os.makedirs(CSS_DIR, exist_ok=True)
+        shutil.copy(
+            os.path.join(PROJECT_DIR, "css", "style.css"),
+            os.path.join(CSS_DIR, "style.css"),
+        )
 
         # 2. Find and sort note files
         note_files = sorted(
